@@ -23,6 +23,11 @@ type Store interface {
 	// expiry time. If the session token already exists, then the data and
 	// expiry time should be overwritten.
 	Commit(token string, b []byte, expiry time.Time) (err error)
+
+	// TouchExpiry just signals the store to update the expiry time
+	// of the session token. This is used to keep the session alive when
+	// session timeout is defined
+	TouchExpiry(ctx context.Context, token string, b []byte, expiry time.Time) (err error)
 }
 
 // IterableStore is the interface for session stores which support iteration.

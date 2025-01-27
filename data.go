@@ -24,6 +24,9 @@ const (
 	// request cycle.
 	Modified
 
+	// TouchExpiry indicates only the expiry needs to update
+	TouchExpiry
+
 	// Destroyed indicates that the session data has been destroyed in the
 	// current request cycle.
 	Destroyed
@@ -75,11 +78,11 @@ func (s *SessionManager) Load(ctx context.Context, token string) (context.Contex
 		return nil, err
 	}
 
-	// Mark the session data as modified if an idle timeout is being used. This
+	// Mark the session data as TouchExpiry if an idle timeout is being used. This
 	// will force the session data to be re-committed to the session store with
 	// a new expiry time.
 	if s.IdleTimeout > 0 {
-		sd.status = Modified
+		sd.status = TouchExpiry
 	}
 
 	return s.addSessionDataToContext(ctx, sd), nil
@@ -121,6 +124,30 @@ func (s *SessionManager) Commit(ctx context.Context) (string, time.Time, error) 
 	}
 
 	return sd.token, expiry, nil
+}
+
+func (s *SessionManager) TouchExpiry(ctx context.Context) (string, time.Time, error) {
+	sd := s.getSessionDataFromContext(ctx)
+
+	sd.mu.Lock()
+	if sd.token == "" {
+		sd.mu.Unlock()
+		return s.Commit(ctx)
+	}
+
+	defer sd.mu.Unlock()
+
+	b, err := s.Codec.Encode(sd.deadline, sd.values)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	expiry := sd.deadline
+	if err := s.doStoreTouchExpiry(ctx, sd.token, b, expiry); err != nil {
+		return "", time.Time{}, err
+	}
+
+	return "", time.Time{}, nil
 }
 
 // Destroy deletes the session data from the session store and sets the session
@@ -680,6 +707,13 @@ func (s *SessionManager) doStoreCommit(ctx context.Context, token string, b []by
 		return c.CommitCtx(ctx, token, b, expiry)
 	}
 	return s.Store.Commit(token, b, expiry)
+}
+
+func (s *SessionManager) doStoreTouchExpiry(ctx context.Context, token string, b []byte, expiry time.Time) (err error) {
+	if s.HashTokenInStore {
+		token = hashToken(token)
+	}
+	return s.Store.TouchExpiry(ctx, token, b, expiry)
 }
 
 func (s *SessionManager) doStoreAll(ctx context.Context) (map[string][]byte, error) {

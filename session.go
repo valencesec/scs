@@ -5,8 +5,6 @@ import (
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/alexedwards/scs/v2/memstore"
 )
 
 // Deprecated: Session is a backwards-compatible alias for SessionManager.
@@ -103,7 +101,7 @@ func New() *SessionManager {
 	s := &SessionManager{
 		IdleTimeout: 0,
 		Lifetime:    24 * time.Hour,
-		Store:       memstore.New(),
+		// Store:       memstore.New(),
 		Codec:       GobCodec{},
 		ErrorFunc:   defaultErrorFunc,
 		contextKey:  generateContextKey(),
@@ -165,6 +163,15 @@ func (s *SessionManager) commitAndWriteSessionCookie(w http.ResponseWriter, r *h
 	ctx := r.Context()
 
 	switch s.Status(ctx) {
+	case TouchExpiry:
+		token, expiry, err := s.TouchExpiry(ctx)
+		if err != nil {
+			s.ErrorFunc(w, r, err)
+			return
+		}
+		if token != "" {
+			s.WriteSessionCookie(ctx, w, token, expiry)
+		}
 	case Modified:
 		token, expiry, err := s.Commit(ctx)
 		if err != nil {
